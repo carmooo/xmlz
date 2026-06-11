@@ -54,6 +54,7 @@ pub const Token = union(enum) {
     tag_close_partial: []const u8,
     tag_close_empty: []const u8,
     content: []const u8,
+    content_partial: []const u8,
 };
 
 pub fn next(xml: *Xml) NextError!Token {
@@ -262,6 +263,7 @@ pub fn next(xml: *Xml) NextError!Token {
             .doctype_attr_value, .tag_attr_value => return .{ .attr_value_partial = xml.buffer[tok_start..xml.buffer.len] },
             .tag_name => return .{ .tag_open_partial = xml.buffer[tok_start..xml.buffer.len] },
             .tag_close_name => return .{ .tag_close_partial = xml.buffer[tok_start..xml.buffer.len] },
+            .content => return .{ .content_partial = xml.buffer[tok_start..xml.buffer.len] },
             else => return error.BufferUnderrun,
         }
     }
@@ -438,6 +440,45 @@ test "tag close partial" {
     try testing.expectEqualDeep(Token{ .tag_open = "properties" }, try xml.next());
 
     try testing.expectEqualDeep(Token{ .tag_close_partial = "propert" }, try xml.next());
+    try testing.expectError(NextError.BufferUnderrun, xml.next());
+}
+
+test "content with different tags" {
+    const bytes =
+        \\<?xml?>
+        \\<h1>Title</h1>
+        \\<text>Some text</text>
+    ;
+    var xml: Xml = .{ .buffer = bytes };
+    try testing.expectEqualDeep(Token{ .doctype = "xml" }, try xml.next());
+
+    try testing.expectEqualDeep(Token{ .tag_open = "h1" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .content = "Title" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .tag_close = "h1" }, try xml.next());
+
+    try testing.expectEqualDeep(Token{ .tag_open = "text" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .content = "Some text" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .tag_close = "text" }, try xml.next());
+
+    try testing.expectError(NextError.BufferUnderrun, xml.next());
+}
+
+test "content partial" {
+    const bytes =
+        \\<?xml?>
+        \\<h1>Title</h1>
+        \\<text>Some
+    ;
+    var xml: Xml = .{ .buffer = bytes };
+    try testing.expectEqualDeep(Token{ .doctype = "xml" }, try xml.next());
+
+    try testing.expectEqualDeep(Token{ .tag_open = "h1" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .content = "Title" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .tag_close = "h1" }, try xml.next());
+
+    try testing.expectEqualDeep(Token{ .tag_open = "text" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .content_partial = "Some" }, try xml.next());
+
     try testing.expectError(NextError.BufferUnderrun, xml.next());
 }
 
