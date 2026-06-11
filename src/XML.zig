@@ -49,25 +49,20 @@ const State = enum {
     comment_b,
 };
 
-pub const Token = struct {
-    tag: Tag,
-    bytes: []const u8,
-
-    pub const Tag = enum {
-        doctype,
-        doctype_partial,
-        attr_key,
-        attr_key_partial,
-        attr_value,
-        attr_value_partial,
-        tag_open,
-        tag_open_partial,
-        tag_close,
-        tag_close_partial,
-        tag_close_empty,
-        content,
-        content_partial,
-    };
+pub const Token = union(enum) {
+    doctype: []const u8,
+    doctype_partial: []const u8,
+    attr_key: []const u8,
+    attr_key_partial: []const u8,
+    attr_value: []const u8,
+    attr_value_partial: []const u8,
+    tag_open: []const u8,
+    tag_open_partial: []const u8,
+    tag_close: []const u8,
+    tag_close_partial: []const u8,
+    tag_close_empty: []const u8,
+    content: []const u8,
+    content_partial: []const u8,
 };
 
 pub fn next(xml: *Xml) NextError!Token {
@@ -99,13 +94,13 @@ pub fn next(xml: *Xml) NextError!Token {
                 ' ', '\t', '\r', '\n' => {
                     return xml.emit(
                         State.doctype,
-                        Token{ .tag = .doctype, .bytes = xml.buffer[tok_start..xml.index] },
+                        Token{ .doctype = xml.buffer[tok_start..xml.index] },
                     );
                 },
                 '?' => {
                     return xml.emit(
                         State.doctype_end,
-                        Token{ .tag = .doctype, .bytes = xml.buffer[tok_start..xml.index] },
+                        Token{ .doctype = xml.buffer[tok_start..xml.index] },
                     );
                 },
                 '<', '>' => return error.SyntaxError,
@@ -124,7 +119,7 @@ pub fn next(xml: *Xml) NextError!Token {
                 '=' => {
                     return xml.emit(
                         State.doctype_attr_value_q,
-                        Token{ .tag = .attr_key, .bytes = xml.buffer[tok_start..xml.index] },
+                        Token{ .attr_key = xml.buffer[tok_start..xml.index] },
                     );
                 },
                 '?', '<', '>' => return error.SyntaxError,
@@ -141,7 +136,7 @@ pub fn next(xml: *Xml) NextError!Token {
                 '"', '\'' => {
                     return xml.emit(
                         State.doctype,
-                        Token{ .tag = .attr_value, .bytes = xml.buffer[tok_start .. xml.index + 1] },
+                        Token{ .attr_value = xml.buffer[tok_start .. xml.index + 1] },
                     );
                 },
                 '\n' => return error.SyntaxError,
@@ -175,13 +170,13 @@ pub fn next(xml: *Xml) NextError!Token {
                 ' ', '\t', '\r', '\n' => {
                     return xml.emit(
                         State.tag,
-                        Token{ .tag = .tag_open, .bytes = xml.buffer[tok_start..xml.index] },
+                        Token{ .tag_open = xml.buffer[tok_start..xml.index] },
                     );
                 },
                 '>' => {
                     return xml.emit(
                         State.body,
-                        Token{ .tag = .tag_open, .bytes = xml.buffer[tok_start..xml.index] },
+                        Token{ .tag_open = xml.buffer[tok_start..xml.index] },
                     );
                 },
                 else => {},
@@ -199,13 +194,13 @@ pub fn next(xml: *Xml) NextError!Token {
                 ' ', '\t', '\r', '\n' => {
                     return xml.emit(
                         State.tag_close_b,
-                        Token{ .tag = .tag_open, .bytes = xml.buffer[tok_start..xml.index] },
+                        Token{ .tag_open = xml.buffer[tok_start..xml.index] },
                     );
                 },
                 '>' => {
                     return xml.emit(
                         State.body,
-                        Token{ .tag = .tag_close, .bytes = xml.buffer[tok_start..xml.index] },
+                        Token{ .tag_close = xml.buffer[tok_start..xml.index] },
                     );
                 },
                 else => {},
@@ -231,7 +226,7 @@ pub fn next(xml: *Xml) NextError!Token {
             .tag_and_empty => switch (byte) {
                 '>' => return xml.emit(
                     State.body,
-                    Token{ .tag = .tag_close_empty, .bytes = xml.buffer[tok_start..xml.index] },
+                    Token{ .tag_close_empty = xml.buffer[tok_start..xml.index] },
                 ),
                 else => return error.SyntaxError,
             },
@@ -239,7 +234,7 @@ pub fn next(xml: *Xml) NextError!Token {
                 '=' => {
                     return xml.emit(
                         State.tag_attr_value_q,
-                        Token{ .tag = .attr_key, .bytes = xml.buffer[tok_start..xml.index] },
+                        Token{ .attr_key = xml.buffer[tok_start..xml.index] },
                     );
                 },
                 '<', '>' => return error.SyntaxError,
@@ -256,7 +251,7 @@ pub fn next(xml: *Xml) NextError!Token {
                 '"', '\'' => {
                     return xml.emit(
                         State.tag,
-                        Token{ .tag = .attr_value, .bytes = xml.buffer[tok_start .. xml.index + 1] },
+                        Token{ .attr_value = xml.buffer[tok_start .. xml.index + 1] },
                     );
                 },
                 '\n' => return error.SyntaxError,
@@ -265,7 +260,7 @@ pub fn next(xml: *Xml) NextError!Token {
             .content => switch (byte) {
                 '<' => return xml.emit(
                     State.tag_name_start,
-                    Token{ .tag = .content, .bytes = xml.buffer[tok_start..xml.index] },
+                    Token{ .content = xml.buffer[tok_start..xml.index] },
                 ),
                 else => {},
             },
@@ -292,12 +287,12 @@ pub fn next(xml: *Xml) NextError!Token {
         }
     } else {
         switch (xml.state) {
-            .doctype_name => return .{ .tag = .doctype_partial, .bytes = xml.buffer[tok_start..xml.buffer.len] },
-            .doctype_attr_key, .tag_attr_key => return .{ .tag = .attr_key_partial, .bytes = xml.buffer[tok_start..xml.buffer.len] },
-            .doctype_attr_value, .tag_attr_value => return .{ .tag = .attr_value_partial, .bytes = xml.buffer[tok_start..xml.buffer.len] },
-            .tag_name => return .{ .tag = .tag_open_partial, .bytes = xml.buffer[tok_start..xml.buffer.len] },
-            .tag_close_name => return .{ .tag = .tag_close_partial, .bytes = xml.buffer[tok_start..xml.buffer.len] },
-            .content => return .{ .tag = .content_partial, .bytes = xml.buffer[tok_start..xml.buffer.len] },
+            .doctype_name => return .{ .doctype_partial = xml.buffer[tok_start..xml.buffer.len] },
+            .doctype_attr_key, .tag_attr_key => return .{ .attr_key_partial = xml.buffer[tok_start..xml.buffer.len] },
+            .doctype_attr_value, .tag_attr_value => return .{ .attr_value_partial = xml.buffer[tok_start..xml.buffer.len] },
+            .tag_name => return .{ .tag_open_partial = xml.buffer[tok_start..xml.buffer.len] },
+            .tag_close_name => return .{ .tag_close_partial = xml.buffer[tok_start..xml.buffer.len] },
+            .content => return .{ .content_partial = xml.buffer[tok_start..xml.buffer.len] },
             else => return error.BufferUnderrun,
         }
     }
@@ -313,7 +308,7 @@ pub fn nextContent(xml: *Xml) NextError!Token {
     var token: Token = undefined;
     while (true) {
         token = try xml.next();
-        switch (token.tag) {
+        switch (token) {
             .content, .content_partial => break,
             else => {},
         }
@@ -331,11 +326,11 @@ test "doctype xml" {
         \\<?xml version="1.0" encoding="UTF-8"?>
     ;
     var xml: Xml = .{ .buffer = bytes };
-    try testing.expectEqualDeep(Token{ .tag = .doctype, .bytes = "xml" }, try xml.next());
-    try testing.expectEqualDeep(Token{ .tag = .attr_key, .bytes = "version" }, try xml.next());
-    try testing.expectEqualDeep(Token{ .tag = .attr_value, .bytes = "\"1.0\"" }, try xml.next());
-    try testing.expectEqualDeep(Token{ .tag = .attr_key, .bytes = "encoding" }, try xml.next());
-    try testing.expectEqualDeep(Token{ .tag = .attr_value, .bytes = "\"UTF-8\"" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .doctype = "xml" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .attr_key = "version" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .attr_value = "\"1.0\"" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .attr_key = "encoding" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .attr_value = "\"UTF-8\"" }, try xml.next());
     try testing.expectError(NextError.BufferUnderrun, xml.next());
 }
 
@@ -344,7 +339,7 @@ test "doctype partial" {
         \\<?xm
     ;
     var xml: Xml = .{ .buffer = bytes };
-    try testing.expectEqualDeep(Token{ .tag = .doctype_partial, .bytes = "xm" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .doctype_partial = "xm" }, try xml.next());
     try testing.expectError(NextError.BufferUnderrun, xml.next());
 }
 
@@ -353,8 +348,8 @@ test "doctype attr_key partial" {
         \\<?xml versi
     ;
     var xml: Xml = .{ .buffer = bytes };
-    try testing.expectEqualDeep(Token{ .tag = .doctype, .bytes = "xml" }, try xml.next());
-    try testing.expectEqualDeep(Token{ .tag = .attr_key_partial, .bytes = "versi" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .doctype = "xml" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .attr_key_partial = "versi" }, try xml.next());
     try testing.expectError(NextError.BufferUnderrun, xml.next());
 }
 
@@ -363,11 +358,11 @@ test "doctype attr_value partial" {
         \\<?xml version="1.0" encoding="U
     ;
     var xml: Xml = .{ .buffer = bytes };
-    try testing.expectEqualDeep(Token{ .tag = .doctype, .bytes = "xml" }, try xml.next());
-    try testing.expectEqualDeep(Token{ .tag = .attr_key, .bytes = "version" }, try xml.next());
-    try testing.expectEqualDeep(Token{ .tag = .attr_value, .bytes = "\"1.0\"" }, try xml.next());
-    try testing.expectEqualDeep(Token{ .tag = .attr_key, .bytes = "encoding" }, try xml.next());
-    try testing.expectEqualDeep(Token{ .tag = .attr_value_partial, .bytes = "\"U" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .doctype = "xml" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .attr_key = "version" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .attr_value = "\"1.0\"" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .attr_key = "encoding" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .attr_value_partial = "\"U" }, try xml.next());
     try testing.expectError(NextError.BufferUnderrun, xml.next());
 }
 
@@ -383,39 +378,39 @@ test "some props" {
         \\</map>
     ;
     var xml: Xml = .{ .buffer = bytes };
-    try testing.expectEqualDeep(Token{ .tag = .doctype, .bytes = "xml" }, try xml.next());
-    try testing.expectEqualDeep(Token{ .tag = .tag_open, .bytes = "map" }, try xml.next());
-    try testing.expectEqualDeep(Token{ .tag = .tag_open, .bytes = "properties" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .doctype = "xml" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .tag_open = "map" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .tag_open = "properties" }, try xml.next());
 
-    try testing.expectEqualDeep(Token{ .tag = .tag_open, .bytes = "property" }, try xml.next());
-    try testing.expectEqualDeep(Token{ .tag = .attr_key, .bytes = "name" }, try xml.next());
-    try testing.expectEqualDeep(Token{ .tag = .attr_value, .bytes = "\"gravity\"" }, try xml.next());
-    try testing.expectEqualDeep(Token{ .tag = .attr_key, .bytes = "type" }, try xml.next());
-    try testing.expectEqualDeep(Token{ .tag = .attr_value, .bytes = "\"float\"" }, try xml.next());
-    try testing.expectEqualDeep(Token{ .tag = .attr_key, .bytes = "value" }, try xml.next());
-    try testing.expectEqualDeep(Token{ .tag = .attr_value, .bytes = "\"12.34\"" }, try xml.next());
-    try testing.expectEqualDeep(Token{ .tag = .tag_close_empty, .bytes = "/" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .tag_open = "property" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .attr_key = "name" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .attr_value = "\"gravity\"" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .attr_key = "type" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .attr_value = "\"float\"" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .attr_key = "value" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .attr_value = "\"12.34\"" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .tag_close_empty = "/" }, try xml.next());
 
-    try testing.expectEqualDeep(Token{ .tag = .tag_open, .bytes = "property" }, try xml.next());
-    try testing.expectEqualDeep(Token{ .tag = .attr_key, .bytes = "name" }, try xml.next());
-    try testing.expectEqualDeep(Token{ .tag = .attr_value, .bytes = "\"never gonna give you up\"" }, try xml.next());
-    try testing.expectEqualDeep(Token{ .tag = .attr_key, .bytes = "type" }, try xml.next());
-    try testing.expectEqualDeep(Token{ .tag = .attr_value, .bytes = "\"bool\"" }, try xml.next());
-    try testing.expectEqualDeep(Token{ .tag = .attr_key, .bytes = "value" }, try xml.next());
-    try testing.expectEqualDeep(Token{ .tag = .attr_value, .bytes = "\"true\"" }, try xml.next());
-    try testing.expectEqualDeep(Token{ .tag = .tag_close_empty, .bytes = "/" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .tag_open = "property" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .attr_key = "name" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .attr_value = "\"never gonna give you up\"" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .attr_key = "type" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .attr_value = "\"bool\"" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .attr_key = "value" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .attr_value = "\"true\"" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .tag_close_empty = "/" }, try xml.next());
 
-    try testing.expectEqualDeep(Token{ .tag = .tag_open, .bytes = "property" }, try xml.next());
-    try testing.expectEqualDeep(Token{ .tag = .attr_key, .bytes = "name" }, try xml.next());
-    try testing.expectEqualDeep(Token{ .tag = .attr_value, .bytes = "\"never gonna let you down\"" }, try xml.next());
-    try testing.expectEqualDeep(Token{ .tag = .attr_key, .bytes = "type" }, try xml.next());
-    try testing.expectEqualDeep(Token{ .tag = .attr_value, .bytes = "\"bool\"" }, try xml.next());
-    try testing.expectEqualDeep(Token{ .tag = .attr_key, .bytes = "value" }, try xml.next());
-    try testing.expectEqualDeep(Token{ .tag = .attr_value, .bytes = "\"true\"" }, try xml.next());
-    try testing.expectEqualDeep(Token{ .tag = .tag_close_empty, .bytes = "/" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .tag_open = "property" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .attr_key = "name" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .attr_value = "\"never gonna let you down\"" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .attr_key = "type" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .attr_value = "\"bool\"" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .attr_key = "value" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .attr_value = "\"true\"" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .tag_close_empty = "/" }, try xml.next());
 
-    try testing.expectEqualDeep(Token{ .tag = .tag_close, .bytes = "properties" }, try xml.next());
-    try testing.expectEqualDeep(Token{ .tag = .tag_close, .bytes = "map" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .tag_close = "properties" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .tag_close = "map" }, try xml.next());
     try testing.expectError(NextError.BufferUnderrun, xml.next());
 }
 
@@ -426,9 +421,9 @@ test "tag attr_key partial" {
         \\ <prop
     ;
     var xml: Xml = .{ .buffer = bytes };
-    try testing.expectEqualDeep(Token{ .tag = .doctype, .bytes = "xml" }, try xml.next());
-    try testing.expectEqualDeep(Token{ .tag = .tag_open, .bytes = "map" }, try xml.next());
-    try testing.expectEqualDeep(Token{ .tag = .tag_open_partial, .bytes = "prop" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .doctype = "xml" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .tag_open = "map" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .tag_open_partial = "prop" }, try xml.next());
     try testing.expectError(NextError.BufferUnderrun, xml.next());
 }
 
@@ -440,13 +435,13 @@ test "tag attr_value partial" {
         \\  <property name="
     ;
     var xml: Xml = .{ .buffer = bytes };
-    try testing.expectEqualDeep(Token{ .tag = .doctype, .bytes = "xml" }, try xml.next());
-    try testing.expectEqualDeep(Token{ .tag = .tag_open, .bytes = "map" }, try xml.next());
-    try testing.expectEqualDeep(Token{ .tag = .tag_open, .bytes = "properties" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .doctype = "xml" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .tag_open = "map" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .tag_open = "properties" }, try xml.next());
 
-    try testing.expectEqualDeep(Token{ .tag = .tag_open, .bytes = "property" }, try xml.next());
-    try testing.expectEqualDeep(Token{ .tag = .attr_key, .bytes = "name" }, try xml.next());
-    try testing.expectEqualDeep(Token{ .tag = .attr_value_partial, .bytes = "\"" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .tag_open = "property" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .attr_key = "name" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .attr_value_partial = "\"" }, try xml.next());
     try testing.expectError(NextError.BufferUnderrun, xml.next());
 }
 
@@ -456,9 +451,9 @@ test "empty tag" {
         \\<map />
     ;
     var xml: Xml = .{ .buffer = bytes };
-    try testing.expectEqualDeep(Token{ .tag = .doctype, .bytes = "xml" }, try xml.next());
-    try testing.expectEqualDeep(Token{ .tag = .tag_open, .bytes = "map" }, try xml.next());
-    try testing.expectEqualDeep(Token{ .tag = .tag_close_empty, .bytes = "/" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .doctype = "xml" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .tag_open = "map" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .tag_close_empty = "/" }, try xml.next());
     try testing.expectError(NextError.BufferUnderrun, xml.next());
 }
 
@@ -468,8 +463,8 @@ test "tag open partial" {
         \\<ma
     ;
     var xml: Xml = .{ .buffer = bytes };
-    try testing.expectEqualDeep(Token{ .tag = .doctype, .bytes = "xml" }, try xml.next());
-    try testing.expectEqualDeep(Token{ .tag = .tag_open_partial, .bytes = "ma" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .doctype = "xml" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .tag_open_partial = "ma" }, try xml.next());
     try testing.expectError(NextError.BufferUnderrun, xml.next());
 }
 
@@ -481,11 +476,11 @@ test "tag close partial" {
         \\ </propert
     ;
     var xml: Xml = .{ .buffer = bytes };
-    try testing.expectEqualDeep(Token{ .tag = .doctype, .bytes = "xml" }, try xml.next());
-    try testing.expectEqualDeep(Token{ .tag = .tag_open, .bytes = "map" }, try xml.next());
-    try testing.expectEqualDeep(Token{ .tag = .tag_open, .bytes = "properties" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .doctype = "xml" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .tag_open = "map" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .tag_open = "properties" }, try xml.next());
 
-    try testing.expectEqualDeep(Token{ .tag = .tag_close_partial, .bytes = "propert" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .tag_close_partial = "propert" }, try xml.next());
     try testing.expectError(NextError.BufferUnderrun, xml.next());
 }
 
@@ -496,15 +491,15 @@ test "content with different tags" {
         \\<text>Some text</text>
     ;
     var xml: Xml = .{ .buffer = bytes };
-    try testing.expectEqualDeep(Token{ .tag = .doctype, .bytes = "xml" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .doctype = "xml" }, try xml.next());
 
-    try testing.expectEqualDeep(Token{ .tag = .tag_open, .bytes = "h1" }, try xml.next());
-    try testing.expectEqualDeep(Token{ .tag = .content, .bytes = "Title" }, try xml.next());
-    try testing.expectEqualDeep(Token{ .tag = .tag_close, .bytes = "h1" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .tag_open = "h1" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .content = "Title" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .tag_close = "h1" }, try xml.next());
 
-    try testing.expectEqualDeep(Token{ .tag = .tag_open, .bytes = "text" }, try xml.next());
-    try testing.expectEqualDeep(Token{ .tag = .content, .bytes = "Some text" }, try xml.next());
-    try testing.expectEqualDeep(Token{ .tag = .tag_close, .bytes = "text" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .tag_open = "text" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .content = "Some text" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .tag_close = "text" }, try xml.next());
 
     try testing.expectError(NextError.BufferUnderrun, xml.next());
 }
@@ -516,14 +511,14 @@ test "content partial" {
         \\<text>Some
     ;
     var xml: Xml = .{ .buffer = bytes };
-    try testing.expectEqualDeep(Token{ .tag = .doctype, .bytes = "xml" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .doctype = "xml" }, try xml.next());
 
-    try testing.expectEqualDeep(Token{ .tag = .tag_open, .bytes = "h1" }, try xml.next());
-    try testing.expectEqualDeep(Token{ .tag = .content, .bytes = "Title" }, try xml.next());
-    try testing.expectEqualDeep(Token{ .tag = .tag_close, .bytes = "h1" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .tag_open = "h1" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .content = "Title" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .tag_close = "h1" }, try xml.next());
 
-    try testing.expectEqualDeep(Token{ .tag = .tag_open, .bytes = "text" }, try xml.next());
-    try testing.expectEqualDeep(Token{ .tag = .content_partial, .bytes = "Some" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .tag_open = "text" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .content_partial = "Some" }, try xml.next());
 
     try testing.expectError(NextError.BufferUnderrun, xml.next());
 }
@@ -537,15 +532,15 @@ test "content and comment" {
         \\<text>Some text</text>
     ;
     var xml: Xml = .{ .buffer = bytes };
-    try testing.expectEqualDeep(Token{ .tag = .doctype, .bytes = "xml" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .doctype = "xml" }, try xml.next());
 
-    try testing.expectEqualDeep(Token{ .tag = .tag_open, .bytes = "h1" }, try xml.next());
-    try testing.expectEqualDeep(Token{ .tag = .content, .bytes = "Title" }, try xml.next());
-    try testing.expectEqualDeep(Token{ .tag = .tag_close, .bytes = "h1" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .tag_open = "h1" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .content = "Title" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .tag_close = "h1" }, try xml.next());
 
-    try testing.expectEqualDeep(Token{ .tag = .tag_open, .bytes = "text" }, try xml.next());
-    try testing.expectEqualDeep(Token{ .tag = .content, .bytes = "Some text" }, try xml.next());
-    try testing.expectEqualDeep(Token{ .tag = .tag_close, .bytes = "text" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .tag_open = "text" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .content = "Some text" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .tag_close = "text" }, try xml.next());
 
     try testing.expectError(NextError.BufferUnderrun, xml.next());
 }
@@ -557,20 +552,20 @@ test "support single and double quotes" {
     ;
     var xml: Xml = .{ .buffer = bytes };
 
-    try testing.expectEqualDeep(Token{ .tag = .doctype, .bytes = "xml" }, try xml.next());
-    try testing.expectEqualDeep(Token{ .tag = .attr_key, .bytes = "version" }, try xml.next());
-    try testing.expectEqualDeep(Token{ .tag = .attr_value, .bytes = "\"1.0\"" }, try xml.next());
-    try testing.expectEqualDeep(Token{ .tag = .attr_key, .bytes = "encoding" }, try xml.next());
-    try testing.expectEqualDeep(Token{ .tag = .attr_value, .bytes = "\'UTF-8\'" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .doctype = "xml" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .attr_key = "version" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .attr_value = "\"1.0\"" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .attr_key = "encoding" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .attr_value = "\'UTF-8\'" }, try xml.next());
 
-    try testing.expectEqualDeep(Token{ .tag = .tag_open, .bytes = "property" }, try xml.next());
-    try testing.expectEqualDeep(Token{ .tag = .attr_key, .bytes = "name" }, try xml.next());
-    try testing.expectEqualDeep(Token{ .tag = .attr_value, .bytes = "\"never gonna give you up\"" }, try xml.next());
-    try testing.expectEqualDeep(Token{ .tag = .attr_key, .bytes = "type" }, try xml.next());
-    try testing.expectEqualDeep(Token{ .tag = .attr_value, .bytes = "\'bool\'" }, try xml.next());
-    try testing.expectEqualDeep(Token{ .tag = .attr_key, .bytes = "value" }, try xml.next());
-    try testing.expectEqualDeep(Token{ .tag = .attr_value, .bytes = "\"true\"" }, try xml.next());
-    try testing.expectEqualDeep(Token{ .tag = .tag_close_empty, .bytes = "/" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .tag_open = "property" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .attr_key = "name" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .attr_value = "\"never gonna give you up\"" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .attr_key = "type" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .attr_value = "\'bool\'" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .attr_key = "value" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .attr_value = "\"true\"" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .tag_close_empty = "/" }, try xml.next());
 
     try testing.expectError(NextError.BufferUnderrun, xml.next());
 }
@@ -583,13 +578,13 @@ test "next content" {
         \\<text>Some
     ;
     var xml: Xml = .{ .buffer = bytes };
-    try testing.expectEqualDeep(Token{ .tag = .content, .bytes = "Title" }, try xml.nextContent());
+    try testing.expectEqualDeep(Token{ .content = "Title" }, try xml.nextContent());
 
-    try testing.expectEqualDeep(Token{ .tag = .tag_close, .bytes = "h1" }, try xml.next());
-    try testing.expectEqualDeep(Token{ .tag = .tag_open, .bytes = "text" }, try xml.next());
-    try testing.expectEqualDeep(Token{ .tag = .content, .bytes = "Some text" }, try xml.nextContent());
+    try testing.expectEqualDeep(Token{ .tag_close = "h1" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .tag_open = "text" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .content = "Some text" }, try xml.nextContent());
 
-    try testing.expectEqualDeep(Token{ .tag = .content_partial, .bytes = "Some" }, try xml.nextContent());
+    try testing.expectEqualDeep(Token{ .content_partial = "Some" }, try xml.nextContent());
 }
 
 pub fn main() !void {}
