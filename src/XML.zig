@@ -39,6 +39,12 @@ const State = enum {
     tag_attr_key,
     tag_attr_value_q,
     tag_attr_value,
+
+    comment_q,
+    comment_start,
+    comment_body,
+    comment_end_maybe,
+    comment_b,
 };
 
 pub const Token = union(enum) {
@@ -151,6 +157,7 @@ pub fn next(xml: *Xml) NextError!Token {
                 '<', '>' => return error.SyntaxError,
                 '/' => xml.state = .tag_close_start,
                 //TODO add comment
+                '!' => xml.state = .comment_start,
                 else => {
                     tok_start = xml.index;
                     xml.state = .tag_name;
@@ -254,6 +261,26 @@ pub fn next(xml: *Xml) NextError!Token {
                     Token{ .content = xml.buffer[tok_start..xml.index] },
                 ),
                 else => {},
+            },
+            .comment_q => switch (byte) {
+                '-' => xml.state = .comment_start,
+                else => return error.SyntaxError,
+            },
+            .comment_start => switch (byte) {
+                '-' => xml.state = .comment_body,
+                else => return error.SyntaxError,
+            },
+            .comment_body => switch (byte) {
+                '-' => xml.state = .comment_end_maybe,
+                else => {},
+            },
+            .comment_end_maybe => switch (byte) {
+                '-' => xml.state = .comment_b,
+                else => xml.state = .comment_body,
+            },
+            .comment_b => switch (byte) {
+                '>' => xml.state = .body,
+                else => return error.SyntaxError,
             },
         }
     } else {
@@ -478,6 +505,28 @@ test "content partial" {
 
     try testing.expectEqualDeep(Token{ .tag_open = "text" }, try xml.next());
     try testing.expectEqualDeep(Token{ .content_partial = "Some" }, try xml.next());
+
+    try testing.expectError(NextError.BufferUnderrun, xml.next());
+}
+
+test "content and comment" {
+    const bytes =
+        \\<?xml?>
+        \\<h1>Title</h1>
+        \\ <!-- This is a multi-
+        \\       line comment, Rick -->
+        \\<text>Some text</text>
+    ;
+    var xml: Xml = .{ .buffer = bytes };
+    try testing.expectEqualDeep(Token{ .doctype = "xml" }, try xml.next());
+
+    try testing.expectEqualDeep(Token{ .tag_open = "h1" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .content = "Title" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .tag_close = "h1" }, try xml.next());
+
+    try testing.expectEqualDeep(Token{ .tag_open = "text" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .content = "Some text" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .tag_close = "text" }, try xml.next());
 
     try testing.expectError(NextError.BufferUnderrun, xml.next());
 }
