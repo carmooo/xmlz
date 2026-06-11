@@ -3,6 +3,8 @@
 //! This tokenizer can emit partial tokens;
 //! The input to this class is a sequence of input buffers that you must supply one at a time.
 //! This was inspired by https://github.com/andrewrk/xml and by the std lib json module.
+//! For now we can use ' and " interchangeably for values. It is the responsability of the user
+//! to check for that. This might change in the future.
 const Xml = @This();
 
 const std = @import("std");
@@ -124,14 +126,14 @@ pub fn next(xml: *Xml) NextError!Token {
                 else => {},
             },
             .doctype_attr_value_q => switch (byte) {
-                '"' => {
+                '"', '\'' => {
                     tok_start = xml.index;
                     xml.state = .doctype_attr_value;
                 },
                 else => return error.SyntaxError,
             },
             .doctype_attr_value => switch (byte) {
-                '"' => {
+                '"', '\'' => {
                     return xml.emit(
                         State.doctype,
                         Token{ .attr_value = xml.buffer[tok_start .. xml.index + 1] },
@@ -239,14 +241,14 @@ pub fn next(xml: *Xml) NextError!Token {
                 else => {},
             },
             .tag_attr_value_q => switch (byte) {
-                '"' => {
+                '"', '\'' => {
                     tok_start = xml.index;
                     xml.state = .tag_attr_value;
                 },
                 else => return error.SyntaxError,
             },
             .tag_attr_value => switch (byte) {
-                '"' => {
+                '"', '\'' => {
                     return xml.emit(
                         State.tag,
                         Token{ .attr_value = xml.buffer[tok_start .. xml.index + 1] },
@@ -527,6 +529,31 @@ test "content and comment" {
     try testing.expectEqualDeep(Token{ .tag_open = "text" }, try xml.next());
     try testing.expectEqualDeep(Token{ .content = "Some text" }, try xml.next());
     try testing.expectEqualDeep(Token{ .tag_close = "text" }, try xml.next());
+
+    try testing.expectError(NextError.BufferUnderrun, xml.next());
+}
+
+test "support single and double quotes" {
+    const bytes =
+        \\<?xml version="1.0" encoding='UTF-8'?>
+        \\  <property name="never gonna give you up" type='bool' value="true"/>
+    ;
+    var xml: Xml = .{ .buffer = bytes };
+
+    try testing.expectEqualDeep(Token{ .doctype = "xml" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .attr_key = "version" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .attr_value = "\"1.0\"" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .attr_key = "encoding" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .attr_value = "\'UTF-8\'" }, try xml.next());
+
+    try testing.expectEqualDeep(Token{ .tag_open = "property" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .attr_key = "name" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .attr_value = "\"never gonna give you up\"" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .attr_key = "type" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .attr_value = "\'bool\'" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .attr_key = "value" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .attr_value = "\"true\"" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .tag_close_empty = "/" }, try xml.next());
 
     try testing.expectError(NextError.BufferUnderrun, xml.next());
 }
