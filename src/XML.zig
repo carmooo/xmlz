@@ -304,6 +304,18 @@ fn emit(xml: *Xml, next_state: State, token: Token) Token {
     return token;
 }
 
+pub fn nextContent(xml: *Xml) NextError!Token {
+    var token: Token = undefined;
+    while (true) {
+        token = try xml.next();
+        switch (token) {
+            .content, .content_partial => break,
+            else => {},
+        }
+    }
+    return token;
+}
+
 pub fn feedInput(xml: *Xml, _: []const u8) void {
     assert(xml.index == xml.buffer.len);
     @compileError("TODO implement me");
@@ -556,6 +568,23 @@ test "support single and double quotes" {
     try testing.expectEqualDeep(Token{ .tag_close_empty = "/" }, try xml.next());
 
     try testing.expectError(NextError.BufferUnderrun, xml.next());
+}
+
+test "next content" {
+    const bytes =
+        \\<?xml?>
+        \\<h1>Title</h1>
+        \\<text>Some text</text>
+        \\<text>Some
+    ;
+    var xml: Xml = .{ .buffer = bytes };
+    try testing.expectEqualDeep(Token{ .content = "Title" }, try xml.nextContent());
+
+    try testing.expectEqualDeep(Token{ .tag_close = "h1" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .tag_open = "text" }, try xml.next());
+    try testing.expectEqualDeep(Token{ .content = "Some text" }, try xml.nextContent());
+
+    try testing.expectEqualDeep(Token{ .content_partial = "Some" }, try xml.nextContent());
 }
 
 pub fn main() !void {}
